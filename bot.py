@@ -1,35 +1,55 @@
+import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from datetime import datetime
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import datetime
 
 TOKEN = "8403382934:AAGyDrinBc_mjz0waMC7ph-MQ_RAO-kD6Pw"
 
+logging.basicConfig(level=logging.INFO)
+
+# время начала смены
+WORK_TIME = datetime.time(10, 0)
+
+# допустимое опоздание (минут)
+WARNING_DELAY = 2
+HARD_DELAY = 5
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Барный контролёр активирован.")
+    await update.message.reply_text("Барный контроль активирован. Сканируй QR и не позорься.")
 
-async def checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
-    now = datetime.now().strftime("%H:%M")
+    now = datetime.datetime.now().time()
 
-    await update.message.reply_text(
-        f"🚨 {user} отмечен в {now}\n"
-        f"Если ты опоздал — бар это запомнит."
-    )
+    delay_minutes = (datetime.datetime.combine(datetime.date.today(), now) -
+                     datetime.datetime.combine(datetime.date.today(), WORK_TIME)).total_seconds() / 60
 
-async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if delay_minutes <= WARNING_DELAY:
+        await update.message.reply_text(f"{user} пришёл вовремя. Невероятно. Даже уважение появилось.")
+    elif WARNING_DELAY < delay_minutes < HARD_DELAY:
+        await update.message.reply_text(f"{user}, ты почти опоздал. Еще чуть-чуть и был бы позором бара.")
+    else:
+        await update.message.reply_text(
+            f"{user} ОПЯТЬ ОПОЗДАЛ 🤡\n"
+            f"Бар уже работает, гости пьют, а ты где был?\n"
+            f"Соберись. Ты бармен, а не декорация."
+        )
+
+async def off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
-    now = datetime.now().strftime("%H:%M")
+    await update.message.reply_text(f"{user} ушёл с работы. Надеюсь не бухать за углом.")
 
-    await update.message.reply_text(
-        f"🍺 {user} ушёл в {now}\n"
-        f"Бар выжил. Смена закрыта."
-    )
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("off", off))
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("in", checkin))
-app.add_handler(CommandHandler("out", checkout))
+    # любое сообщение = отметка прихода (QR)
+    app.add_handler(MessageHandler(filters.TEXT, handle_qr))
 
-print("Бот запущен...")
-app.run_polling()
+    print("BOT STARTED")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
